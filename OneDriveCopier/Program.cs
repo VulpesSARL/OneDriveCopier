@@ -48,7 +48,7 @@ namespace OneDriveCopier
             DriveItem root;
             try
             {
-                if (string.IsNullOrWhiteSpace(RemotePath) == true)
+                if (string.IsNullOrWhiteSpace(RemotePath) == true || RemotePath == "/")
                     root = QuerySync<DriveItem>(graphClient.Drive.Root.Request().Expand("children").GetAsync());
                 else
                     root = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePath).Request().Expand("children").GetAsync());
@@ -230,7 +230,7 @@ namespace OneDriveCopier
                 Drive drv = QuerySync<Drive>(graphClient.Drive.Request().GetAsync());
                 DriveItem newcreateddir;
                 DriveItem newfolder = new DriveItem() { Name = RP.Substring(RP.LastIndexOf("/") + 1), Folder = new Folder() };
-                if (string.IsNullOrWhiteSpace(RemotePathDotDot) == true)
+                if (string.IsNullOrWhiteSpace(RemotePathDotDot) == true || RemotePath == "/")
                     newcreateddir = QuerySync<DriveItem>(graphClient.Drive.Root.Children.Request().AddAsync(newfolder));
                 else
                     newcreateddir = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePathDotDot).Children.Request().AddAsync(newfolder));
@@ -514,7 +514,7 @@ namespace OneDriveCopier
                     {
                         Drive drv = QuerySync<Drive>(graphClient.Drive.Request().GetAsync());
                         DriveItem root;
-                        if (string.IsNullOrWhiteSpace(RemotePath) == true)
+                        if (string.IsNullOrWhiteSpace(RemotePath) == true || RemotePath == "/")
                             root = QuerySync<DriveItem>(graphClient.Drive.Root.Request().Expand("children").GetAsync());
                         else
                             root = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePath).Request().Expand("children").GetAsync());
@@ -540,7 +540,7 @@ namespace OneDriveCopier
                         Drive drv = QuerySync<Drive>(graphClient.Drive.Request().GetAsync());
                         DriveItem newcreateddir;
                         DriveItem newfolder = new DriveItem() { Name = NewDir, Folder = new Folder() };
-                        if (string.IsNullOrWhiteSpace(RemotePath) == true)
+                        if (string.IsNullOrWhiteSpace(RemotePath) == true || RemotePath == "/")
                             newcreateddir = QuerySync<DriveItem>(graphClient.Drive.Root.Children.Request().AddAsync(newfolder));
                         else
                             newcreateddir = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePath).Children.Request().AddAsync(newfolder));
