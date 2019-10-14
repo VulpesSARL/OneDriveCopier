@@ -221,7 +221,9 @@ namespace OneDriveCopier
                 string RP = RemotePath;
                 RP += "/";
                 string PathOnly = LPath.Substring(LPath.LastIndexOf("\\") + 1);
-                RP += Uri.EscapeUriString(PathOnly);
+                RP += PathOnly;
+                if (PathOnly.StartsWith(" ") == true)
+                    continue;
 
                 MarkAsProcessed(RemoteFiles, PathOnly, true);
 
@@ -247,6 +249,8 @@ namespace OneDriveCopier
 
             foreach (string Filename in System.IO.Directory.EnumerateFiles(LocalPath, "*.*", System.IO.SearchOption.TopDirectoryOnly))
             {
+                if (System.IO.Path.GetFileName(Filename).StartsWith(" ") == true)
+                    continue;
                 string RemoteFullName = RemotePath + "/" + Uri.EscapeUriString(System.IO.Path.GetFileName(Filename));
 
                 System.IO.FileInfo fi = new System.IO.FileInfo(Filename);
@@ -317,7 +321,7 @@ namespace OneDriveCopier
                         }
                     }
                 }
-                catch(Exception ee)
+                catch (Exception ee)
                 {
                     Debug.WriteLine(ee.ToString());
                     Console.WriteLine("\b\b\b\b\bFAILED");
