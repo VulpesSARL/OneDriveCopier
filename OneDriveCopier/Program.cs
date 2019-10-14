@@ -249,13 +249,19 @@ namespace OneDriveCopier
             {
                 string RemoteFullName = RemotePath + "/" + Uri.EscapeUriString(System.IO.Path.GetFileName(Filename));
 
-                Console.Write(Filename + " -> " + RemoteFullName + " ...      ");
-
                 System.IO.FileInfo fi = new System.IO.FileInfo(Filename);
 
                 DateTime DTCreated = fi.CreationTimeUtc;
                 DateTime DTModified = fi.LastWriteTimeUtc;
                 Int64 FSZ = fi.Length;
+
+                Console.Write(Filename + " -> " + RemoteFullName + " (" + NiceSize(FSZ) + ") ...      ");
+
+                if (FSZ == 0)
+                {
+                    Console.WriteLine("\b\b\b\b\bBlank");
+                    continue;
+                }
 
                 MarkAsProcessed(RemoteFiles, System.IO.Path.GetFileName(Filename), false);
 
@@ -273,40 +279,52 @@ namespace OneDriveCopier
                     }
                 }
 
-                using (System.IO.FileStream fss = System.IO.File.Open(Filename, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+                try
                 {
-                    FileSystemInfo fsi = new Microsoft.Graph.FileSystemInfo();
-                    fsi.CreatedDateTime = new DateTimeOffset(DTCreated);
-                    fsi.LastModifiedDateTime = new DateTimeOffset(DTModified);
-                    DriveItemUploadableProperties uplprop = new DriveItemUploadableProperties();
-                    uplprop.FileSystemInfo = fsi;
-                    UploadSession UploadSess = QuerySync<UploadSession>(graphClient.Drive.Root.ItemWithPath(RemoteFullName).CreateUploadSession(uplprop).Request().PostAsync());
-                    const int MaxChunk = 320 * 10 * 1024;
-                    ChunkedUploadProvider provider = new ChunkedUploadProvider(UploadSess, graphClient, fss, MaxChunk);
-                    IEnumerable<UploadChunkRequest> chunckRequests = provider.GetUploadChunkRequests();
-                    byte[] readBuffer = new byte[MaxChunk];
-                    List<Exception> exceptions = new List<Exception>();
-                    bool Res = false;
-                    foreach (UploadChunkRequest request in chunckRequests)
+                    using (System.IO.FileStream fss = System.IO.File.Open(Filename, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
                     {
-                        Int64 Perc = (Int64)(((decimal)request.RangeBegin / (decimal)request.TotalSessionLength) * 100m);
-                        Console.Write("\b\b\b\b\b" + Perc.ToString() + "%");
-
-                        UploadChunkResult result = QuerySync<UploadChunkResult>(provider.GetChunkRequestResponseAsync(request, readBuffer, exceptions));
-
-                        if (result.UploadSucceeded)
+                        FileSystemInfo fsi = new Microsoft.Graph.FileSystemInfo();
+                        fsi.CreatedDateTime = new DateTimeOffset(DTCreated);
+                        fsi.LastModifiedDateTime = new DateTimeOffset(DTModified);
+                        DriveItemUploadableProperties uplprop = new DriveItemUploadableProperties();
+                        uplprop.FileSystemInfo = fsi;
+                        UploadSession UploadSess = QuerySync<UploadSession>(graphClient.Drive.Root.ItemWithPath(RemoteFullName).CreateUploadSession(uplprop).Request().PostAsync());
+                        const int MaxChunk = 320 * 10 * 1024;
+                        ChunkedUploadProvider provider = new ChunkedUploadProvider(UploadSess, graphClient, fss, MaxChunk);
+                        IEnumerable<UploadChunkRequest> chunckRequests = provider.GetUploadChunkRequests();
+                        byte[] readBuffer = new byte[MaxChunk];
+                        List<Exception> exceptions = new List<Exception>();
+                        bool Res = false;
+                        foreach (UploadChunkRequest request in chunckRequests)
                         {
-                            Res = true;
+                            Int64 Perc = (Int64)(((decimal)request.RangeBegin / (decimal)request.TotalSessionLength) * 100m);
+                            Console.Write("\b\b\b\b\b" + Perc.ToString().PadLeft(4) + "%");
+
+                            UploadChunkResult result = QuerySync<UploadChunkResult>(provider.GetChunkRequestResponseAsync(request, readBuffer, exceptions));
+
+                            if (result.UploadSucceeded)
+                            {
+                                Res = true;
+                            }
+                        }
+                        if (Res == false)
+                        {
+                            Console.WriteLine("\b\b\b\b\bFAILED");
+                            if (SkipFailed == false)
+                                return (false);
+                            else
+                                continue;
                         }
                     }
-                    if (Res == false)
-                    {
-                        Console.WriteLine("\b\b\b\b\bFAILED");
-                        if (SkipFailed == false)
-                            return (false);
-                        else
-                            continue;
-                    }
+                }
+                catch(Exception ee)
+                {
+                    Debug.WriteLine(ee.ToString());
+                    Console.WriteLine("\b\b\b\b\bFAILED");
+                    if (SkipFailed == false)
+                        return (false);
+                    else
+                        continue;
                 }
                 Console.WriteLine("\b\b\b\b\bOK   ");
             }
