@@ -23,6 +23,8 @@ namespace OneDriveCopier
     class Program
     {
         public static GraphServiceClient graphClient = null;
+        public static DataHolder dh = new DataHolder();
+        public static CGraphLogin glogin = null;
 
         public static IEnumerable<T> QuerySync<T>(Task<IQueryable<T>> t)
         {
@@ -51,7 +53,7 @@ namespace OneDriveCopier
                 if (string.IsNullOrWhiteSpace(RemotePath) == true || RemotePath == "/")
                     root = QuerySync<DriveItem>(graphClient.Drive.Root.Request().Expand("children").GetAsync());
                 else
-                    root = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePath).Request().Expand("children").GetAsync());
+                    root = QuerySync<DriveItem>(graphClient.Drive.Root.ItemWithPath(RemotePath.Replace("#", "%23")).Request().Expand("children").GetAsync());
 
                 if (root == null)
                 {
@@ -212,6 +214,8 @@ namespace OneDriveCopier
 
         static bool RecurseUploadData(string LocalPath, string RemotePath, bool SkipFailed)
         {
+            if (TestLogin() == false)
+                return (false);
             List<FileSystemInfos> RemoteFiles = ListFiles(RemotePath);
             if (RemoteFiles == null)
                 return (false);
@@ -232,6 +236,10 @@ namespace OneDriveCopier
                 Drive drv = QuerySync<Drive>(graphClient.Drive.Request().GetAsync());
                 DriveItem newcreateddir;
                 DriveItem newfolder = new DriveItem() { Name = RP.Substring(RP.LastIndexOf("/") + 1), Folder = new Folder() };
+
+                if (TestLogin() == false)
+                    return (false);
+
                 if (string.IsNullOrWhiteSpace(RemotePathDotDot) == true || RemotePath == "/")
                     newcreateddir = QuerySync<DriveItem>(graphClient.Drive.Root.Children.Request().AddAsync(newfolder));
                 else
@@ -251,7 +259,7 @@ namespace OneDriveCopier
             {
                 if (System.IO.Path.GetFileName(Filename).StartsWith(" ") == true)
                     continue;
-                string RemoteFullName = RemotePath + "/" + Uri.EscapeUriString(System.IO.Path.GetFileName(Filename));
+                string RemoteFullName = RemotePath.Replace("#", "%23") + "/" + Uri.EscapeUriString(System.IO.Path.GetFileName(Filename)).Replace("#", "%23");
 
                 System.IO.FileInfo fi = new System.IO.FileInfo(Filename);
 
@@ -279,6 +287,9 @@ namespace OneDriveCopier
                     }
                     else
                     {
+                        if (TestLogin() == false)
+                            return (false);
+
                         QuerySync(graphClient.Drive.Items[fsitest.OneDriveID].Request().DeleteAsync());
                     }
                 }
@@ -292,6 +303,10 @@ namespace OneDriveCopier
                         fsi.LastModifiedDateTime = new DateTimeOffset(DTModified);
                         DriveItemUploadableProperties uplprop = new DriveItemUploadableProperties();
                         uplprop.FileSystemInfo = fsi;
+
+                        if (TestLogin() == false)
+                            return (false);
+
                         UploadSession UploadSess = QuerySync<UploadSession>(graphClient.Drive.Root.ItemWithPath(RemoteFullName).CreateUploadSession(uplprop).Request().PostAsync());
                         const int MaxChunk = 320 * 10 * 1024;
                         ChunkedUploadProvider provider = new ChunkedUploadProvider(UploadSess, graphClient, fss, MaxChunk);
@@ -303,6 +318,9 @@ namespace OneDriveCopier
                         {
                             Int64 Perc = (Int64)(((decimal)request.RangeBegin / (decimal)request.TotalSessionLength) * 100m);
                             Console.Write("\b\b\b\b\b" + Perc.ToString().PadLeft(4) + "%");
+
+                            if (TestLogin() == false)
+                                return (false);
 
                             UploadChunkResult result = QuerySync<UploadChunkResult>(provider.GetChunkRequestResponseAsync(request, readBuffer, exceptions));
 
@@ -341,12 +359,51 @@ namespace OneDriveCopier
                 string RemoteFullName = RemotePath + "/" + fsis.Name + (fsis.IsDir == true ? " (DIR)" : ""); //deco only
 
                 Console.Write("Deleting " + RemoteFullName + " ... ");
+
+                if (TestLogin() == false)
+                    return (false);
+
                 QuerySync(graphClient.Drive.Items[fsis.OneDriveID].Request().DeleteAsync());
                 Console.WriteLine("OK");
             }
             return (true);
         }
 
+        static bool TestLogin()
+        {
+            if (glogin == null)
+            {
+                glogin = new CGraphLogin(dh);
+                graphClient = glogin.AutomaticGetGraphClient(false);
+                if (graphClient == null)
+                {
+                    Console.WriteLine("Cannot get access to graph API");
+                    return (false);
+                }
+                StoreDH();
+                return (true);
+            }
+            else
+            {
+                if (DateTime.Now > dh.Expires)
+                {
+                    glogin = null;
+                    return (TestLogin());
+                }
+            }
+
+            return (true);
+        }
+
+        static void StoreDH()
+        {
+            Reg.WriteValue("AccessToken", dh.AccessToken);
+            Reg.WriteValue("Client_ID", dh.Client_ID);
+            Reg.WriteValue("Code", dh.Code);
+            Reg.WriteValue("RefreshToken", dh.RefreshToken);
+            Reg.WriteValue("State", dh.State);
+            Reg.WriteValue("Tenant", dh.Tenant);
+        }
 
         [STAThread]
         static int Main(string[] args)
@@ -356,7 +413,6 @@ namespace OneDriveCopier
             Console.WriteLine("Vulpes SARL, Luxembourg - https://vulpes.lu");
             Console.WriteLine("");
 
-            DataHolder dh = new DataHolder();
             dh.Tenant = Tenants.Consumers;
             dh.Scope = new string[] { Scopes.FilesReadWriteAll, Scopes.OfflineAccess };
             dh.State = Guid.NewGuid().ToString();
@@ -494,12 +550,8 @@ namespace OneDriveCopier
                     return (5);
                 }
 
-                Reg.WriteValue("AccessToken", dh.AccessToken);
-                Reg.WriteValue("Client_ID", dh.Client_ID);
-                Reg.WriteValue("Code", dh.Code);
-                Reg.WriteValue("RefreshToken", dh.RefreshToken);
-                Reg.WriteValue("State", dh.State);
-                Reg.WriteValue("Tenant", dh.Tenant);
+                StoreDH();
+
                 Console.WriteLine("Data stored in registry");
                 return (0);
             }
@@ -519,14 +571,8 @@ namespace OneDriveCopier
 
             Console.Write("Authenticating ... ");
 
-            CGraphLogin glogin = new CGraphLogin(dh);
-            graphClient = glogin.AutomaticGetGraphClient(false);
-
-            if (graphClient == null)
-            {
-                Console.WriteLine("Cannot get access to graph API - rerun /auth parameter");
+            if (TestLogin() == false)
                 return (5);
-            }
 
             Console.WriteLine("OK");
 
@@ -583,7 +629,11 @@ namespace OneDriveCopier
                             return (5);
                         }
 
-                        RecurseUploadData(UploadLocalDir, RemotePath, SkipFailed);
+                        if (RecurseUploadData(UploadLocalDir, RemotePath, SkipFailed) == false)
+                        {
+                            Console.WriteLine("Process failed!");
+                            return (5);
+                        }
                         break;
                     }
             }
