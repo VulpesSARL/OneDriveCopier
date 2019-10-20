@@ -38,6 +38,12 @@
     <WarningLevel>4</WarningLevel>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RunPostBuildEvent>Always</RunPostBuildEvent>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Graph, Version=1.17.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Graph.1.17.0\lib\net45\Microsoft.Graph.dll</HintPath>
@@ -90,5 +96,11 @@
       <DependentUpon>WebLogin.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="icon.ico" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>ilmerge.exe "$(TargetPath)" /out:"$(TargetDir)\$(SolutionName)_Merged.exe" "$(TargetDir)Microsoft.Graph.Core.dll" "$(TargetDir)Microsoft.Graph.dll" "$(TargetDir)Newtonsoft.Json.dll" "$(TargetDir)System.ValueTuple.dll" /lib:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319" /ndebug /v4</PostBuildEvent>
+  </PropertyGroup>
 </Project>

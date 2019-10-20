@@ -1,6 +1,6 @@
 # OneDrive copier
 
-a small tool to copy files from local to OneDrive
+a small tool to copy files from local to OneDrive - also intended to run on Windows Server Core.
 
 
 ### Usage examples

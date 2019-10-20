@@ -25,6 +25,20 @@ namespace OneDriveCopier
         public static GraphServiceClient graphClient = null;
         public static DataHolder dh = new DataHolder();
         public static CGraphLogin glogin = null;
+        public static bool UseWriteEventLog = false;
+        public static bool FailedDetails = false;
+        const string EventLogTitle = "OneDriveCopier";
+
+        static Int64 StatCopySZFailed = 0;
+        static Int64 StatCopySZSkipped = 0;
+        static Int64 StatCopySZSuccess = 0;
+        static Int64 StatCopyNumFailed = 0;
+        static Int64 StatCopyNumSkipped = 0;
+        static Int64 StatCopyNumSuccess = 0;
+        static Int64 StatNumDirProcessed = 0;
+        static Int64 StatNumDeleted = 0;
+        static DateTime StatCopyStarted;
+        static DateTime StatCopyEnded;
 
         public static IEnumerable<T> QuerySync<T>(Task<IQueryable<T>> t)
         {
@@ -41,6 +55,52 @@ namespace OneDriveCopier
         public static void QuerySync(Task t)
         {
             t.Wait();
+        }
+
+        static void WriteEventLog(string Message, EventLogEntryType type)
+        {
+            if (UseWriteEventLog == false)
+                return;
+            try
+            {
+                if (EventLog.SourceExists(EventLogTitle) == false)
+                {
+                    EventLog.CreateEventSource(EventLogTitle, "Application");
+                    return;
+                }
+
+                EventLog ev = new EventLog();
+                ev.Source = EventLogTitle;
+                if (Message.Length > 32766)
+                    Message = Message.Substring(0, 32766 - 6) + "<snip>";
+                ev.WriteEntry(Message, type);
+                Debug.WriteLine("EVT: " + Message);
+            }
+            catch (Exception ee)
+            {
+                Debug.WriteLine("Event Log didn't work " + ee.ToString());
+            }
+        }
+
+        static void RegisterEventLog()
+        {
+            try
+            {
+                if (EventLog.SourceExists(EventLogTitle) == false)
+                {
+                    EventLog.CreateEventSource(EventLogTitle, "Application");
+                    Console.WriteLine(EventLogTitle + " created");
+                }
+                else
+                {
+                    Console.WriteLine(EventLogTitle + " exists");
+                }
+            }
+            catch (Exception ee)
+            {
+                Debug.WriteLine(ee.ToString());
+                Console.WriteLine(" failed");
+            }
         }
 
         static List<FileSystemInfos> ListFiles(string RemotePath)
@@ -220,6 +280,8 @@ namespace OneDriveCopier
             if (RemoteFiles == null)
                 return (false);
 
+            StatNumDirProcessed++;
+
             foreach (string LPath in System.IO.Directory.EnumerateDirectories(LocalPath, "*.*", System.IO.SearchOption.TopDirectoryOnly))
             {
                 string RP = RemotePath;
@@ -271,6 +333,7 @@ namespace OneDriveCopier
 
                 if (FSZ == 0)
                 {
+                    StatCopyNumSkipped++;
                     Console.WriteLine("\b\b\b\b\bBlank");
                     continue;
                 }
@@ -282,6 +345,8 @@ namespace OneDriveCopier
                 {
                     if (DTLightTest(fsitest.Modified, DTModified) && DTLightTest(fsitest.Created, DTCreated) && fsitest.SZ == FSZ)
                     {
+                        StatCopyNumSkipped++;
+                        StatCopySZSkipped += FSZ;
                         Console.WriteLine("\b\b\b\b\bSkipped");
                         continue;
                     }
@@ -343,11 +408,22 @@ namespace OneDriveCopier
                 {
                     Debug.WriteLine(ee.ToString());
                     Console.WriteLine("\b\b\b\b\bFAILED");
+                    StatCopyNumFailed++;
+                    StatCopySZFailed += FSZ;
+
+                    if (FailedDetails == true)
+                    {
+                        Console.WriteLine("---> " + ee.ToString());
+                        WriteEventLog("Copy failed:\nLocal" + Filename + "\nRemote: " + RemoteFullName + "\n\n" + ee.ToString(), EventLogEntryType.Error);
+                    }
+
                     if (SkipFailed == false)
                         return (false);
                     else
                         continue;
                 }
+                StatCopyNumSuccess++;
+                StatCopySZSuccess += FSZ;
                 Console.WriteLine("\b\b\b\b\bOK   ");
             }
 
@@ -364,6 +440,7 @@ namespace OneDriveCopier
                     return (false);
 
                 QuerySync(graphClient.Drive.Items[fsis.OneDriveID].Request().DeleteAsync());
+                StatNumDeleted++;
                 Console.WriteLine("OK");
             }
             return (true);
@@ -377,6 +454,7 @@ namespace OneDriveCopier
                 graphClient = glogin.AutomaticGetGraphClient(false);
                 if (graphClient == null)
                 {
+                    WriteEventLog("Authentication failed.", EventLogEntryType.Error);
                     Console.WriteLine("Cannot get access to graph API");
                     return (false);
                 }
@@ -421,6 +499,7 @@ namespace OneDriveCopier
             string NewDir = "";
             string UploadLocalDir = "";
             bool SkipFailed = false;
+            bool RegEventLog = false;
             int Command = 0;
 
             for (int i = 0; i < args.Length; i++)
@@ -447,6 +526,9 @@ namespace OneDriveCopier
                         break;
                     case "/skipfailed":
                         SkipFailed = true;
+                        break;
+                    case "/verbose":
+                        FailedDetails = true;
                         break;
                     case "/tennant":
                         if (nextcmd == "")
@@ -488,6 +570,12 @@ namespace OneDriveCopier
                         UploadLocalDir = nextcmd;
                         i++;
                         break;
+                    case "/eventlog":
+                        UseWriteEventLog = true;
+                        break;
+                    case "/registereventlog":
+                        RegEventLog = true;
+                        break;
                     case "/command":
                         if (nextcmd == "")
                         {
@@ -528,6 +616,9 @@ namespace OneDriveCopier
                         Console.WriteLine(" /newdir <path>               New directory");
                         Console.WriteLine(" /uploadpath <path>           Local path to upload");
                         Console.WriteLine(" /skipfailed                  Skips failed copies, continues the process");
+                        Console.WriteLine(" /eventlog                    Writes error messages and stats to Event Log");
+                        Console.WriteLine(" /registereventlog            Register Event Log Source");
+                        Console.WriteLine(" /verbose                     Verbose mode (will also log to Event Log if used with /eventlog)");
                         Console.WriteLine("");
                         Console.WriteLine("Register app link:");
                         Console.WriteLine("    https://go.microsoft.com/fwlink/?linkid=2083908");
@@ -536,6 +627,22 @@ namespace OneDriveCopier
                         Console.WriteLine("    https://login.microsoftonline.com/common/oauth2/nativeclient");
                         Console.WriteLine("");
                         return (1);
+                }
+            }
+
+            if (RegEventLog == true)
+            {
+                Console.WriteLine("Register Eventlog ... ");
+                RegisterEventLog();
+                return (0);
+            }
+
+            if (UseWriteEventLog == true)
+            {
+                if (EventLog.SourceExists(EventLogTitle) == false)
+                {
+                    Console.WriteLine("Event Log " + EventLogTitle + " does not exist. Use /registereventlog");
+                    return (5);
                 }
             }
 
@@ -552,6 +659,8 @@ namespace OneDriveCopier
 
                 StoreDH();
 
+                WriteEventLog("Authentication stored successfully.", EventLogEntryType.Information);
+
                 Console.WriteLine("Data stored in registry");
                 return (0);
             }
@@ -565,6 +674,7 @@ namespace OneDriveCopier
 
             if (dh.AccessToken == "" || dh.Client_ID == "" || dh.Code == "" || dh.RefreshToken == "" || dh.State == "" || dh.Tenant == "")
             {
+                WriteEventLog("Missing Authentication data.", EventLogEntryType.Warning);
                 Console.WriteLine("No data in registry - rerun /auth parameter");
                 return (5);
             }
@@ -615,6 +725,7 @@ namespace OneDriveCopier
 
                         if (newcreateddir == null)
                         {
+                            WriteEventLog("Cannot create directory " + newfolder + " in " + RemotePath + ".", EventLogEntryType.Error);
                             Console.WriteLine("Cannot create directory");
                             return (5);
                         }
@@ -629,11 +740,41 @@ namespace OneDriveCopier
                             return (5);
                         }
 
+                        StatCopyStarted = DateTime.Now;
+
+                        bool ProcessFailed = false;
+
                         if (RecurseUploadData(UploadLocalDir, RemotePath, SkipFailed) == false)
                         {
                             Console.WriteLine("Process failed!");
-                            return (5);
+                            ProcessFailed = true;
                         }
+
+                        StatCopyEnded = DateTime.Now;
+
+                        string StatResults = "";
+                        if (ProcessFailed == false)
+                            StatResults += "Process completed successfully.\n";
+                        else
+                            StatResults += "Process failed.\n";
+
+                        string allargs = "";
+                        foreach (string a in args)
+                        {
+                            allargs += (a.Contains(" ") == true ? "\"" + a + "\"" : a) + " ";
+                        }
+
+                        StatResults += "Args:                   " + allargs.Trim() + "\n\n";
+                        StatResults += "Run time:               " + (StatCopyEnded - StatCopyStarted).ToString("hh\\:mm\\:ss").PadLeft(15) + "\n";
+                        StatResults += "Directory processed:    " + StatNumDirProcessed.ToString().PadLeft(15) + "\n";
+                        StatResults += "Elements deleted:       " + StatNumDeleted.ToString().PadLeft(15) + "\n\n";
+                        StatResults += "Successfully processed: " + StatCopyNumSuccess.ToString().PadLeft(15) + " " + NiceSize(StatCopySZSuccess).PadLeft(20) + "\n";
+                        StatResults += "Skipped:                " + StatCopyNumSkipped.ToString().PadLeft(15) + " " + NiceSize(StatCopySZSkipped).PadLeft(20) + "\n";
+                        StatResults += "Failed:                 " + StatCopyNumFailed.ToString().PadLeft(15) + " " + NiceSize(StatCopySZFailed).PadLeft(20) + "\n";
+
+                        Console.WriteLine(StatResults);
+                        WriteEventLog(StatResults, ProcessFailed == true ? EventLogEntryType.Error : EventLogEntryType.Information);
+
                         break;
                     }
             }

@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("OneDriveCopier")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("Copies local files to Microsoft OneDrive")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("Vulpes SARL")]
 [assembly: AssemblyProduct("OneDriveCopier")]
-[assembly: AssemblyCopyright("Copyright ©  2019")]
+[assembly: AssemblyCopyright("Copyright ©  2019, Vulpes SARL")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
